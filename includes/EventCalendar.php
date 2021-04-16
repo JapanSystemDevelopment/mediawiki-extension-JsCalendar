@@ -48,15 +48,15 @@ class EventCalendar {
 	 * @return array
 	 */
 	public static function findEvents( array $opt ) {
-		$namespaceIdx = $opt['namespace'] ?? NS_MAIN;
-		$prefix = $opt['prefix'] ?? '';
-		$suffix = $opt['suffix'] ?? '';
+		$namespaceIdx = isset($opt['namespace']) ? $opt['namespace'] : NS_MAIN;
+		$prefix = isset($opt['prefix']) ? $opt['prefix'] : '' ;
+		$suffix = isset($opt['suffix']) ? $opt['suffix'] : '';
 
-		$dateFormat = $opt['dateFormat'] ?? 'Y/m/d';
-		$limit = $opt['limit'] ?? 500;
+		$dateFormat = isset($opt['dateFormat']) ? $opt['dateFormat'] : 'Y-m-d';
+		$limit = isset($opt['limit']) ? $opt['limit'] : 500;
 
 		// build the SQL query
-		$dbr = wfGetDB( DB_REPLICA );
+		$dbr = wfGetDB( DB_SLAVE );
 		$tables = [ 'page' ];
 		$fields = [ 'page_title' ];
 		$where = [];
@@ -70,17 +70,18 @@ class EventCalendar {
 
 		// 5000 should limit output volume to about 300 KiB assuming 60 bytes per entry.
 		$defaultLimit = 5000;
-		$options['LIMIT'] = $opt['limit'] ?? $defaultLimit;
+		$options['LIMIT'] = isset($opt['limit']) ? $opt['limit'] : $defaultLimit;
+		$options['ORDER BY'] = "page_touched desc";
 
 		// process the query
 		$res = $dbr->select( $tables, $fields, $where, __METHOD__, $options );
 
 		$eventmap = [];
-		foreach ( $res as $row ) {
+		while ($row = $dbr->fetchRow($res)) {
 			// Try to find the date in $pageName by removing $prefix and $suffix.
-			$dbKey = $row->page_title;
-			$dateString = substr( $dbKey, strlen( $prefix ),
-				strlen( $dbKey ) - strlen( $prefix ) - strlen( $suffix ) );
+			$dbKey = $row["page_title"];
+			// $dateString = mb_substr($dbKey,mb_strlen($prefix),mb_strlen($dbKey));
+			$dateString = mb_substr( $dbKey, mb_strlen( $prefix ), mb_strlen( $dbKey ) - mb_strlen( $prefix ) - mb_strlen( $suffix ) );
 
 			// Try to parse the date.
 			// For example, pages like "Conferences/05_April_2010" will need dateFormat=d/F/Y.
@@ -92,11 +93,9 @@ class EventCalendar {
 			}
 
 			$startdate = $dateTime->format( 'Y-m-d' );
-
 			$dateTime->modify( '+1 day' );
 			$enddate = $dateTime->format( 'Y-m-d' );
-
-			$title = Title::makeTitle( $namespaceIdx, $row->page_title );
+			$title = Title::makeTitle( $namespaceIdx, $row['page_title'] );
 			$pageName = $title->getFullText();
 			$url = $title->getLinkURL();
 
@@ -176,7 +175,7 @@ class EventCalendar {
 		// calendar container and data array
 		$scriptHtml = "if ( typeof window.eventCalendarAspectRatio !== 'object' ) " .
 			"{ window.eventCalendarAspectRatio = []; }\n" .
-			"window.eventCalendarAspectRatio.push( " . floatval( $options['aspectratio'] ?? 1.6 ) . ");\n" .
+			"window.eventCalendarAspectRatio.push( " . floatval( isset($options['aspectratio']) ? $options['aspectratio'] : 1.6 ) . ");\n" .
 			"if ( typeof window.eventCalendarData !== 'object' ) { window.eventCalendarData = []; }\n" .
 			"window.eventCalendarData.push( " . FormatJson::encode( $events ) . " );\n";
 
